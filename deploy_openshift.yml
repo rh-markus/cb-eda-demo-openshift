@@ -1,0 +1,68 @@
+---
+- name: Deploy Web Server to OpenShift
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Ensure EDA Demo namespace exists
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: eda-demo
+        state: present
+
+    - name: Deploy Nginx application
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: nginx-demo
+            namespace: eda-demo
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: nginx-demo
+            template:
+              metadata:
+                labels:
+                  app: nginx-demo
+              spec:
+                containers:
+                  - name: nginx
+                    image: nginxinc/nginx-unprivileged:latest
+                    ports:
+                      - containerPort: 8080
+
+    - name: Expose Nginx as a Service
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: nginx-demo-svc
+            namespace: eda-demo
+          spec:
+            selector:
+              app: nginx-demo
+            ports:
+              - port: 8080
+                targetPort: 8080
+
+    - name: Create OpenShift Route for public access
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: route.openshift.io/v1
+          kind: Route
+          metadata:
+            name: nginx-demo-route
+            namespace: eda-demo
+          spec:
+            to:
+              kind: Service
+              name: nginx-demo-svc
+            port:
+              targetPort: 8080

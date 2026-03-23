@@ -1,0 +1,12 @@
+---
+- name: Remediate OpenShift Web Server
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Scale Nginx deployment back to 1 replica
+      kubernetes.core.k8s_scale:
+        api_version: apps/v1
+        kind: Deployment
+        name: nginx-demo
+        namespace: eda-demo
+        replicas: 1

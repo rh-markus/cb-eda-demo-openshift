@@ -1,0 +1,15 @@
+---
+- name: Monitor OpenShift Web App
+  hosts: localhost
+  sources:
+    - ansible.eda.url_check:
+        urls:
+          - http://nginx-demo-route-eda-demo.apps.<your-cluster-domain> # Replace after first deployment
+        delay: 5
+
+  rules:
+    - name: Web app is down
+      condition: event.url_check.status == "down"
+      action:
+        run_playbook:
+          name: remediate_openshift.yml
