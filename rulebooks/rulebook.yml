@@ -12,4 +12,6 @@
       condition: event.url_check.status == "down"
       action:
         run_playbook:
-          name: remediate_openshift.yml
+          name: "Remediation on OpenShift"
+          organization: "Default"
+
