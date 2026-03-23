@@ -11,7 +11,7 @@
     - name: Web app is down
       condition: event.url_check.status == "down"
       action:
-        run_playbook:
+        run_job_template:
           name: "Remediation on OpenShift"
           organization: "Default"
 
