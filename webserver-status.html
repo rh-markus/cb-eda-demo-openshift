@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Service Status Dashboard</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            transition: background-color 0.8s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            background-color: #f3f4f6;
+        }
+        
+        .banner {
+            background-color: white;
+            padding: 1rem 2rem;
+            width: 100%;
+            box-sizing: border-box;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+        }
+
+        .banner img {
+            height: 45px; 
+            margin-right: 20px;
+        }
+
+        .banner h1 {
+            margin: 0;
+            color: #333;
+            font-size: 1.4rem;
+        }
+
+        .status-container {
+            margin-top: 8vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        .status-text {
+            font-size: 5rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            color: #1f2937;
+            letter-spacing: 2px;
+        }
+
+        .sub-text {
+            font-size: 1.2rem;
+            color: #4b5563;
+            background: rgba(255, 255, 255, 0.5);
+            padding: 10px 20px;
+            border-radius: 20px;
+        }
+
+        #resume-btn {
+            display: none;
+            margin-top: 20px;
+            padding: 10px 24px;
+            font-size: 1rem;
+            font-weight: bold;
+            color: white;
+            background-color: #374151;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: background-color 0.2s;
+        }
+
+        #resume-btn:hover { background-color: #1f2937; }
+
+        .log-container {
+            margin-top: 2rem;
+            width: 80%;
+            max-width: 600px;
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        .log-container h3 {
+            margin-top: 0;
+            color: #374151;
+            border-bottom: 1px solid #e5e7eb;
+            padding-bottom: 10px;
+        }
+
+        .log-entry {
+            padding: 8px 0;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 0.95rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .log-time { color: #6b7280; font-family: monospace; }
+        .log-up { color: #059669; font-weight: bold; }
+        .log-down { color: #dc2626; font-weight: bold; }
+        .log-error { color: #d97706; font-weight: bold; }
+
+        /* Pastel Colors */
+        .bg-up { background-color: #d1fae5; } /* Green */
+        .bg-down { background-color: #fee2e2; } /* Red */
+        .bg-paused { background-color: #fef3c7; } /* Yellow */
+    </style>
+</head>
+<body id="bg-body">
+
+    <div class="banner">
+        <img src="cb-logo.jpeg" alt="Company Logo">
+        <h1>Crimison Biologics Service Monitor</h1>
+    </div>
+
+    <div class="status-container">
+        <div class="status-text" id="status-text">Checking...</div>
+        <div class="sub-text" id="sub-text">Establishing connection to OpenShift cluster</div>
+        <button id="resume-btn" onclick="startPolling()">Resume Polling</button>
+    </div>
+
+    <div class="log-container">
+        <h3>System Event Log</h3>
+        <div id="log-entries"></div>
+    </div>
+
+    <script>
+        const TARGET_URL = 'https://nginx-demo-route-eda-demo.apps.cluster-mztzr.mztzr.sandbox2747.opentlc.com'; 
+        
+        // Switched to a different, more robust CORS proxy
+        const PROXY_URL = `https://corsproxy.io/?${encodeURIComponent(TARGET_URL)}`;
+        
+        const CHECK_INTERVAL = 5000; // 5 seconds (kinder to the proxy limits)
+        const MAX_ERRORS = 4; // Stop polling after 4 consecutive proxy/CORS errors
+
+        let currentState = 'unknown';
+        let consecutiveErrors = 0;
+        let pollTimer = null;
+
+        async function checkStatus() {
+            try {
+                // Add timestamp to bypass proxy caching
+                const response = await fetch(`${PROXY_URL}&t=${new Date().getTime()}`);
+                
+                // Read the raw text response from the proxy
+                const text = await response.text();
+
+                // Reset error counter on successful network request
+                consecutiveErrors = 0; 
+
+                // Check if OpenShift HAProxy is serving the 503 error page
+                if (text.includes("Application is not available")) {
+                    updateState('down');
+                } else {
+                    updateState('up');
+                }
+            } catch (error) {
+                console.error("Fetch Error / CORS Block:", error);
+                consecutiveErrors++;
+
+                if (consecutiveErrors >= MAX_ERRORS) {
+                    pausePolling();
+                } else {
+                    updateState('down'); 
+                }
+            }
+        }
+
+        function updateState(newState) {
+            if (currentState !== newState) {
+                currentState = newState;
+                setUI(newState);
+                addLogEntry(newState);
+            }
+        }
+
+        function setUI(state) {
+            const body = document.getElementById('bg-body');
+            const statusText = document.getElementById('status-text');
+            const subText = document.getElementById('sub-text');
+            const resumeBtn = document.getElementById('resume-btn');
+
+            if (state === 'up') {
+                body.className = 'bg-up';
+                statusText.innerText = 'Online';
+                subText.innerText = 'Service is operating normally';
+                resumeBtn.style.display = 'none';
+            } else if (state === 'down') {
+                body.className = 'bg-down';
+                statusText.innerText = 'Offline';
+                subText.innerText = 'OpenShift Route is failing. Awaiting EDA remediation...';
+                resumeBtn.style.display = 'none';
+            } else if (state === 'paused') {
+                body.className = 'bg-paused';
+                statusText.innerText = 'Paused';
+                subText.innerText = 'Polling suspended due to proxy rate limits.';
+                resumeBtn.style.display = 'block';
+            }
+        }
+
+        function addLogEntry(state) {
+            const logContainer = document.getElementById('log-entries');
+            const timeString = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            
+            if (state === 'up') {
+                entry.innerHTML = `<span class="log-up">Service Restored</span> <span class="log-time">${timeString}</span>`;
+            } else if (state === 'down') {
+                entry.innerHTML = `<span class="log-down">Service Outage Detected</span> <span class="log-time">${timeString}</span>`;
+            } else if (state === 'paused') {
+                entry.innerHTML = `<span class="log-error">Connection to proxy lost. Pausing.</span> <span class="log-time">${timeString}</span>`;
+            }
+            
+            logContainer.prepend(entry);
+        }
+
+        function startPolling() {
+            consecutiveErrors = 0;
+            if (pollTimer) clearInterval(pollTimer);
+            
+            // Set UI to checking state
+            document.getElementById('bg-body').className = '';
+            document.getElementById('status-text').innerText = 'Checking...';
+            document.getElementById('sub-text').innerText = 'Re-establishing connection...';
+            document.getElementById('resume-btn').style.display = 'none';
+            currentState = 'unknown';
+
+            // Start loop
+            checkStatus();
+            pollTimer = setInterval(checkStatus, CHECK_INTERVAL);
+        }
+
+        function pausePolling() {
+            if (pollTimer) clearInterval(pollTimer);
+            updateState('paused');
+        }
+
+        // Initialize
+        startPolling();
+    </script>
+</body>
+</html>
